@@ -1,5 +1,4 @@
 const counterEl = document.getElementById('counter');
-
 const REFRESH_INTERVAL_MS = 60 * 1000;
 let hasAnyValue = false;
 
@@ -10,31 +9,35 @@ function formatNumber(value) {
 }
 
 async function fetchCounterValue() {
-  const response = await fetch(`/api/counter?t=${Date.now()}`);
+  const response = await fetch(`./counter.json?t=${Date.now()}`, { cache: 'no-store' });
   const data = await response.json();
 
   if (!response.ok) {
     throw new Error(data.error || 'Erro ao buscar contador.');
   }
 
+  if (!Number.isInteger(data.followersNeeded)) {
+    throw new Error('Contador invalido.');
+  }
+
   return data.followersNeeded;
 }
 
-async function runComparison() {
+async function updateCounter() {
   try {
     if (!hasAnyValue) {
       counterEl.textContent = '...';
     }
 
-    const followersNeeded = await fetchCounterValue();
-    counterEl.textContent = formatNumber(followersNeeded);
+    const value = await fetchCounterValue();
+    counterEl.textContent = formatNumber(value);
     hasAnyValue = true;
-  } catch (error) {
+  } catch {
     if (!hasAnyValue) {
       counterEl.textContent = '--';
     }
   }
 }
 
-runComparison();
-setInterval(runComparison, REFRESH_INTERVAL_MS);
+updateCounter();
+setInterval(updateCounter, REFRESH_INTERVAL_MS);
