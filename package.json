@@ -1,0 +1,20 @@
+{
+  "name": "instagram-competitor-tracker",
+  "version": "1.0.0",
+  "description": "Site para comparar seguidores entre dois perfis do Instagram",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "instagram",
+    "followers",
+    "tracker"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
