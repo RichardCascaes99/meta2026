@@ -9,6 +9,9 @@ const PORT = process.env.PORT || 3000;
 const CACHE_TTL_MS = 60 * 1000;
 const UPDATE_INTERVAL_MS = 60 * 60 * 1000;
 const SNAPSHOT_PATH = path.join(__dirname, 'data', 'tracker-snapshot.json');
+const INSTAGRAM_APP_ID = '936619743392459';
+const INSTAGRAM_USER_AGENT =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 const MY_USERNAME = normalizeUsername(
   process.env.MY_INSTAGRAM_USERNAME || 'canaloamador'
 );
@@ -68,21 +71,105 @@ function parseFollowersFromHtml(html) {
   return Number(match[1]);
 }
 
-async function fetchFollowersFromInstagramApi(username) {
-  const url = `https://i.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`;
+function parseLsdToken(html) {
+  const match = html.match(/"LSD",\[\],\{"token":"([^"]+)"/);
+  return match ? match[1] : '';
+}
 
-  const response = await fetch(url, {
+function parseCookieHeader(profileResponse) {
+  if (typeof profileResponse.headers.getSetCookie === 'function') {
+    const setCookies = profileResponse.headers.getSetCookie();
+    if (setCookies.length > 0) {
+      return setCookies.map((cookie) => cookie.split(';')[0]).join('; ');
+    }
+  }
+
+  const rawSetCookie = profileResponse.headers.get('set-cookie') || '';
+  if (!rawSetCookie) {
+    return '';
+  }
+
+  return rawSetCookie
+    .split(/,(?=[^;,]+=)/)
+    .map((cookie) => cookie.split(';')[0].trim())
+    .filter(Boolean)
+    .join('; ');
+}
+
+function readCookieValue(cookieHeader, cookieName) {
+  const pattern = new RegExp(`(?:^|;\\s*)${cookieName}=([^;]+)`);
+  const match = cookieHeader.match(pattern);
+  return match ? match[1] : '';
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function openInstagramProfile(username) {
+  const profileUrl = `https://www.instagram.com/${encodeURIComponent(username)}/`;
+
+  const profileResponse = await fetch(profileUrl, {
     headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      'X-IG-App-ID': '936619743392459',
-      Accept: 'application/json',
-      Referer: `https://www.instagram.com/${username}/`
+      'User-Agent': INSTAGRAM_USER_AGENT,
+      Accept: 'text/html',
+      Referer: 'https://www.instagram.com/'
     }
   });
 
+  if (!profileResponse.ok) {
+    const error = new Error(`Instagram profile status ${profileResponse.status}`);
+    error.status = profileResponse.status;
+    throw error;
+  }
+
+  const html = await profileResponse.text();
+  const cookieHeader = parseCookieHeader(profileResponse);
+  const lsdToken = parseLsdToken(html);
+  const csrfToken = readCookieValue(cookieHeader, 'csrftoken');
+
+  return {
+    html,
+    profileUrl,
+    cookieHeader,
+    lsdToken,
+    csrfToken
+  };
+}
+
+async function fetchFollowersFromInstagramApiWithSession(username) {
+  const profile = await openInstagramProfile(username);
+  const url = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`;
+
+  const headers = {
+    'User-Agent': INSTAGRAM_USER_AGENT,
+    'X-IG-App-ID': INSTAGRAM_APP_ID,
+    Accept: 'application/json',
+    Referer: profile.profileUrl,
+    'X-Requested-With': 'XMLHttpRequest'
+  };
+
+  if (profile.lsdToken) {
+    headers['X-FB-LSD'] = profile.lsdToken;
+  }
+
+  if (profile.csrfToken) {
+    headers['X-CSRFToken'] = profile.csrfToken;
+  }
+
+  if (profile.cookieHeader) {
+    headers.Cookie = profile.cookieHeader;
+  }
+
+  const response = await fetch(url, {
+    headers
+  });
+
   if (!response.ok) {
-    const error = new Error(`Instagram API status ${response.status}`);
+    const body = await response.text().catch(() => '');
+    const error = new Error(
+      `Instagram API with session status ${response.status} (${body.slice(0, 140)})`
+    );
     error.status = response.status;
     throw error;
   }
@@ -99,25 +186,39 @@ async function fetchFollowersFromInstagramApi(username) {
   return Number(followersCount);
 }
 
-async function fetchFollowersFromInstagramHtml(username) {
-  const url = `https://www.instagram.com/${encodeURIComponent(username)}/`;
+async function fetchFollowersFromInstagramApiSimple(username) {
+  const url = `https://i.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`;
 
   const response = await fetch(url, {
     headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      Accept: 'text/html',
-      Referer: 'https://www.instagram.com/'
+      'User-Agent': INSTAGRAM_USER_AGENT,
+      'X-IG-App-ID': INSTAGRAM_APP_ID,
+      Accept: 'application/json',
+      Referer: `https://www.instagram.com/${username}/`
     }
   });
 
   if (!response.ok) {
-    const error = new Error(`Instagram HTML status ${response.status}`);
+    const error = new Error(`Instagram API simple status ${response.status}`);
     error.status = response.status;
     throw error;
   }
 
-  const html = await response.text();
+  const data = await response.json();
+  const userData = data?.data?.user;
+  const followersCount =
+    userData?.edge_followed_by?.count ?? userData?.follower_count ?? null;
+
+  if (followersCount === null) {
+    throw new Error('Instagram API simple sem contagem de seguidores.');
+  }
+
+  return Number(followersCount);
+}
+
+async function fetchFollowersFromInstagramHtml(username) {
+  const profile = await openInstagramProfile(username);
+  const html = profile.html;
   const followersCount = parseFollowersFromHtml(html);
 
   if (followersCount === null) {
@@ -129,20 +230,28 @@ async function fetchFollowersFromInstagramHtml(username) {
 
 async function fetchFollowersWithFallback(username) {
   try {
-    const followers = await fetchFollowersFromInstagramApi(username);
-    return { followers, source: 'instagram-api' };
-  } catch (apiError) {
+    const followers = await fetchFollowersFromInstagramApiWithSession(username);
+    return { followers, source: 'instagram-api-with-session' };
+  } catch (sessionError) {
     try {
-      const followers = await fetchFollowersFromInstagramHtml(username);
-      return { followers, source: 'instagram-html' };
-    } catch (htmlError) {
-      const mergedError = new Error(
-        `Falha ao consultar ${username}. API: ${formatSafeError(
-          apiError
-        )}. HTML: ${formatSafeError(htmlError)}`
-      );
-      mergedError.status = apiError.status || htmlError.status;
-      throw mergedError;
+      const followers = await fetchFollowersFromInstagramApiSimple(username);
+      return { followers, source: 'instagram-api-simple' };
+    } catch (simpleError) {
+      try {
+        const followers = await fetchFollowersFromInstagramHtml(username);
+        return { followers, source: 'instagram-html' };
+      } catch (htmlError) {
+        const mergedError = new Error(
+          `Falha ao consultar ${username}. API session: ${formatSafeError(
+            sessionError
+          )}. API simple: ${formatSafeError(
+            simpleError
+          )}. HTML: ${formatSafeError(htmlError)}`
+        );
+        mergedError.status =
+          sessionError.status || simpleError.status || htmlError.status;
+        throw mergedError;
+      }
     }
   }
 }
@@ -217,19 +326,53 @@ async function refreshTrackedProfiles() {
     trackerState.lastAttemptAt = new Date().toISOString();
     trackerState.error = null;
 
-    const [myResult, rivalResult] = await Promise.all([
-      getFollowersByUsername(MY_USERNAME, false),
-      getFollowersByUsername(RIVAL_USERNAME, false)
-    ]);
+    let myResult = null;
+    let rivalResult = null;
+    let firstError = null;
 
-    trackerState.myFollowers = myResult.followers;
-    trackerState.rivalFollowers = rivalResult.followers;
+    try {
+      myResult = await getFollowersByUsername(MY_USERNAME, false);
+    } catch (error) {
+      firstError = error;
+      console.error(`Falha ao atualizar ${MY_USERNAME}:`, formatSafeError(error));
+    }
+
+    await sleep(1200);
+
+    try {
+      rivalResult = await getFollowersByUsername(RIVAL_USERNAME, false);
+    } catch (error) {
+      if (!firstError) {
+        firstError = error;
+      }
+      console.error(
+        `Falha ao atualizar ${RIVAL_USERNAME}:`,
+        formatSafeError(error)
+      );
+    }
+
+    const nextMyFollowers =
+      myResult?.followers ?? trackerState.myFollowers ?? null;
+    const nextRivalFollowers =
+      rivalResult?.followers ?? trackerState.rivalFollowers ?? null;
+
+    if (!Number.isInteger(nextMyFollowers) || !Number.isInteger(nextRivalFollowers)) {
+      if (firstError) {
+        throw firstError;
+      }
+      throw new Error('Sem dados suficientes para atualizar o contador.');
+    }
+
+    trackerState.myFollowers = nextMyFollowers;
+    trackerState.rivalFollowers = nextRivalFollowers;
     trackerState.followersNeeded = Math.max(
-      rivalResult.followers - myResult.followers + 1,
+      nextRivalFollowers - nextMyFollowers + 1,
       0
     );
     trackerState.updatedAt = new Date().toISOString();
-    trackerState.source = `${myResult.source}|${rivalResult.source}`;
+    trackerState.source = `${myResult?.source || 'stale-my'}|${
+      rivalResult?.source || 'stale-rival'
+    }`;
 
     await persistSnapshot();
   })();
