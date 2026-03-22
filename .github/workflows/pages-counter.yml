@@ -2,6 +2,9 @@ name: Update And Deploy Counter
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
   schedule:
     - cron: '0 * * * *'
 

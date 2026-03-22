@@ -234,19 +234,51 @@ async function main() {
   const existing = await readExistingCounter();
 
   try {
-    const myResult = await fetchFollowersWithRetry(MY_USERNAME);
+    let myResult = null;
+    let rivalResult = null;
+    const errors = [];
+
+    try {
+      myResult = await fetchFollowersWithRetry(MY_USERNAME);
+    } catch (error) {
+      errors.push(`my(${MY_USERNAME}): ${error.message}`);
+    }
+
     await new Promise((resolve) => setTimeout(resolve, 1300));
-    const rivalResult = await fetchFollowersWithRetry(RIVAL_USERNAME);
+
+    try {
+      rivalResult = await fetchFollowersWithRetry(RIVAL_USERNAME);
+    } catch (error) {
+      errors.push(`rival(${RIVAL_USERNAME}): ${error.message}`);
+    }
+
+    const myFollowers =
+      myResult?.followers ??
+      (Number.isInteger(existing?.myFollowers) ? existing.myFollowers : null);
+    const rivalFollowers =
+      rivalResult?.followers ??
+      (Number.isInteger(existing?.rivalFollowers) ? existing.rivalFollowers : null);
+
+    if (!Number.isInteger(myFollowers) || !Number.isInteger(rivalFollowers)) {
+      throw new Error(
+        errors.length > 0 ? errors.join(' | ') : 'Sem dados suficientes para atualizar.'
+      );
+    }
 
     const payload = {
       myUsername: MY_USERNAME,
       rivalUsername: RIVAL_USERNAME,
-      myFollowers: myResult.followers,
-      rivalFollowers: rivalResult.followers,
-      followersNeeded: Math.max(rivalResult.followers - myResult.followers + 1, 0),
+      myFollowers,
+      rivalFollowers,
+      followersNeeded: Math.max(rivalFollowers - myFollowers + 1, 0),
       updatedAt: new Date().toISOString(),
-      source: `${myResult.source}|${rivalResult.source}`
+      source: `${myResult?.source || 'stale-my'}|${rivalResult?.source || 'stale-rival'}`
     };
+
+    if (errors.length > 0) {
+      payload.lastAttemptAt = new Date().toISOString();
+      payload.lastError = errors.join(' | ');
+    }
 
     await writeCounterFile(payload);
     console.log(`Counter atualizado: ${payload.followersNeeded}`);
