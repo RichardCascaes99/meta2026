@@ -63,12 +63,21 @@ function formatSafeError(error) {
 }
 
 function parseFollowersFromHtml(html) {
-  const match = html.match(/"edge_followed_by"\s*:\s*\{"count"\s*:\s*(\d+)\}/);
-  if (!match) {
-    return null;
+  const patterns = [
+    /"edge_followed_by"\s*:\s*\{"count"\s*:\s*(\d+)\}/,
+    /\\"edge_followed_by\\"\s*:\s*\{\\"count\\"\s*:\s*(\d+)\}/,
+    /"follower_count"\s*:\s*(\d+)/,
+    /\\"follower_count\\"\s*:\s*(\d+)/
+  ];
+
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (match) {
+      return Number(match[1]);
+    }
   }
 
-  return Number(match[1]);
+  return null;
 }
 
 function parseLsdToken(html) {
