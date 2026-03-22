@@ -143,15 +143,38 @@ async function fetchFollowersFromApiSimple(username) {
 }
 
 async function fetchFollowersFromHtml(username) {
-  const profile = await openInstagramProfile(username);
-  const html = profile.html;
-  const followers = parseFollowersFromHtml(html);
+  const encodedUsername = encodeURIComponent(username);
+  const urls = [
+    `https://www.instagram.com/${encodedUsername}/embed/`,
+    `https://www.instagram.com/${encodedUsername}/`
+  ];
+  const attempts = [];
 
-  if (followers === null) {
-    throw new Error('HTML sem followers');
+  for (const url of urls) {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': USER_AGENT,
+        Accept: 'text/html',
+        Referer: 'https://www.instagram.com/'
+      }
+    });
+
+    if (!response.ok) {
+      attempts.push(`${url} -> status ${response.status}`);
+      continue;
+    }
+
+    const html = await response.text();
+    const followers = parseFollowersFromHtml(html);
+
+    if (followers !== null) {
+      return followers;
+    }
+
+    attempts.push(`${url} -> sem contagem`);
   }
 
-  return followers;
+  throw new Error(`HTML sem followers (${attempts.join(' | ')})`);
 }
 
 async function fetchFollowers(username) {

@@ -217,15 +217,40 @@ async function fetchFollowersFromInstagramApiSimple(username) {
 }
 
 async function fetchFollowersFromInstagramHtml(username) {
-  const profile = await openInstagramProfile(username);
-  const html = profile.html;
-  const followersCount = parseFollowersFromHtml(html);
+  const encodedUsername = encodeURIComponent(username);
+  const urls = [
+    `https://www.instagram.com/${encodedUsername}/embed/`,
+    `https://www.instagram.com/${encodedUsername}/`
+  ];
+  const attempts = [];
 
-  if (followersCount === null) {
-    throw new Error('Instagram HTML sem contagem de seguidores.');
+  for (const url of urls) {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': INSTAGRAM_USER_AGENT,
+        Accept: 'text/html',
+        Referer: 'https://www.instagram.com/'
+      }
+    });
+
+    if (!response.ok) {
+      attempts.push(`${url} -> status ${response.status}`);
+      continue;
+    }
+
+    const html = await response.text();
+    const followersCount = parseFollowersFromHtml(html);
+
+    if (followersCount !== null) {
+      return followersCount;
+    }
+
+    attempts.push(`${url} -> sem contagem`);
   }
 
-  return followersCount;
+  throw new Error(
+    `Instagram HTML sem contagem de seguidores (${attempts.join(' | ')})`
+  );
 }
 
 async function fetchFollowersWithFallback(username) {
