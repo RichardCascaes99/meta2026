@@ -7,7 +7,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 const CACHE_TTL_MS = 60 * 1000;
-const UPDATE_INTERVAL_MS = 15 * 60 * 1000;
+const UPDATE_INTERVAL_MS = 60 * 60 * 1000;
 const SNAPSHOT_PATH = path.join(__dirname, 'data', 'tracker-snapshot.json');
 const MY_USERNAME = normalizeUsername(
   process.env.MY_INSTAGRAM_USERNAME || 'canaloamador'
@@ -309,6 +309,6 @@ setInterval(() => {
 app.listen(PORT, () => {
   console.log(`Servidor rodando em http://localhost:${PORT}`);
   console.log(
-    `Atualizacao automatica a cada ${UPDATE_INTERVAL_MS / 60000} minutos (${MY_USERNAME} vs ${RIVAL_USERNAME}).`
+    `Atualizacao automatica a cada 1 hora (${MY_USERNAME} vs ${RIVAL_USERNAME}).`
   );
 });

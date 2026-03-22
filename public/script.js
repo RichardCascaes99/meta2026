@@ -1,6 +1,6 @@
 const counterEl = document.getElementById('counter');
 
-const REFRESH_INTERVAL_MS = 60 * 1000;
+const REFRESH_INTERVAL_MS = 60 * 60 * 1000;
 let hasAnyValue = false;
 
 const numberFormatter = new Intl.NumberFormat('pt-BR');

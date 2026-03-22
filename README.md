@@ -7,7 +7,7 @@ Site simples para mostrar quantos seguidores faltam para o seu perfil ultrapassa
 - Consulta automaticamente os seguidores de:
   - `canaloamador`
   - `mundotrilive`
-- Atualiza essa consulta no servidor a cada 15 minutos
+- Atualiza essa consulta no servidor a cada 1 hora
 - Mostra no site apenas o contador central com a quantidade que falta para ultrapassar
 - Mantem o ultimo valor valido se o Instagram oscilar temporariamente
 
@@ -36,7 +36,7 @@ npm start
 
 ## Estrutura
 
-- `server.js`: API local e atualizacao automatica a cada 15 minutos
+- `server.js`: API local e atualizacao automatica a cada 1 hora
 - `public/index.html`: pagina principal
 - `public/styles.css`: estilo da interface
 - `public/script.js`: logica da pagina e calculo
