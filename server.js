@@ -262,6 +262,37 @@ async function fetchFollowersFromInstagramHtml(username) {
   );
 }
 
+async function fetchFollowersFromInstagramProxy(username) {
+  const encodedUsername = encodeURIComponent(username);
+  const instagramUrl = `https://www.instagram.com/${encodedUsername}/embed/`;
+  const proxyUrl = `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(instagramUrl)}`;
+
+  const response = await fetch(proxyUrl, {
+    headers: {
+      'User-Agent': INSTAGRAM_USER_AGENT,
+      Accept: 'text/html'
+    }
+  });
+
+  if (!response.ok) {
+    const error = new Error(`Instagram proxy status ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  const html = await response.text();
+  if (/Please wait a few minutes before you try again\./i.test(html)) {
+    throw new Error('Instagram proxy bloqueado temporariamente.');
+  }
+
+  const followersCount = parseFollowersFromHtml(html);
+  if (followersCount === null) {
+    throw new Error('Instagram proxy sem contagem de seguidores.');
+  }
+
+  return Number(followersCount);
+}
+
 async function fetchFollowersWithFallback(username) {
   try {
     const followers = await fetchFollowersFromInstagramApiWithSession(username);
@@ -275,16 +306,26 @@ async function fetchFollowersWithFallback(username) {
         const followers = await fetchFollowersFromInstagramHtml(username);
         return { followers, source: 'instagram-html' };
       } catch (htmlError) {
-        const mergedError = new Error(
-          `Falha ao consultar ${username}. API session: ${formatSafeError(
-            sessionError
-          )}. API simple: ${formatSafeError(
-            simpleError
-          )}. HTML: ${formatSafeError(htmlError)}`
-        );
-        mergedError.status =
-          sessionError.status || simpleError.status || htmlError.status;
-        throw mergedError;
+        try {
+          const followers = await fetchFollowersFromInstagramProxy(username);
+          return { followers, source: 'instagram-proxy' };
+        } catch (proxyError) {
+          const mergedError = new Error(
+            `Falha ao consultar ${username}. API session: ${formatSafeError(
+              sessionError
+            )}. API simple: ${formatSafeError(
+              simpleError
+            )}. HTML: ${formatSafeError(htmlError)}. Proxy: ${formatSafeError(
+              proxyError
+            )}`
+          );
+          mergedError.status =
+            sessionError.status ||
+            simpleError.status ||
+            htmlError.status ||
+            proxyError.status;
+          throw mergedError;
+        }
       }
     }
   }

@@ -190,6 +190,36 @@ async function fetchFollowersFromHtml(username) {
   throw new Error(`HTML sem followers (${attempts.join(' | ')})`);
 }
 
+async function fetchFollowersFromProxy(username) {
+  const encodedUsername = encodeURIComponent(username);
+  const instagramUrl = `https://www.instagram.com/${encodedUsername}/embed/`;
+  const proxyUrl = `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(instagramUrl)}`;
+
+  const response = await fetch(proxyUrl, {
+    headers: {
+      'User-Agent': USER_AGENT,
+      Accept: 'text/html'
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Proxy status ${response.status}`);
+  }
+
+  const html = await response.text();
+
+  if (/Please wait a few minutes before you try again\./i.test(html)) {
+    throw new Error('Proxy bloqueado pelo Instagram');
+  }
+
+  const followers = parseFollowersFromHtml(html);
+  if (followers === null) {
+    throw new Error('Proxy HTML sem followers');
+  }
+
+  return Number(followers);
+}
+
 async function fetchFollowers(username) {
   try {
     const followers = await fetchFollowersFromApiWithSession(username);
@@ -202,11 +232,19 @@ async function fetchFollowers(username) {
         source: `instagram-api-simple (fallback after ${sessionError.message})`
       };
     } catch (simpleError) {
-      const followers = await fetchFollowersFromHtml(username);
-      return {
-        followers,
-        source: `instagram-html (fallback after ${sessionError.message} | ${simpleError.message})`
-      };
+      try {
+        const followers = await fetchFollowersFromHtml(username);
+        return {
+          followers,
+          source: `instagram-html (fallback after ${sessionError.message} | ${simpleError.message})`
+        };
+      } catch (htmlError) {
+        const followers = await fetchFollowersFromProxy(username);
+        return {
+          followers,
+          source: `instagram-proxy (fallback after ${sessionError.message} | ${simpleError.message} | ${htmlError.message})`
+        };
+      }
     }
   }
 }
